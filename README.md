@@ -164,6 +164,40 @@ kubectl get pods -n kube-system -l "app.kubernetes.io/name=aws-ebs-csi-driver"
 
 You should see controller and node plugin pods in `Running` state.
 
+## Step 4: Create environments and apply ResourceQuotas
+
+Create the **dev**, **staging**, and **prod** namespaces, then apply the [`ResourceQuota`](https://kubernetes.io/docs/concepts/policy/resource-quotas/) manifests in [`resourcesQuotas/`](resourcesQuotas/) to each namespace.
+
+Run these commands from the repository root:
+
+### 1. Create namespaces
+
+```bash
+kubectl create namespace dev
+kubectl create namespace staging
+kubectl create namespace prod
+```
+
+If a namespace already exists, `kubectl create namespace` fails; you can ignore that or use `kubectl get namespace` to confirm.
+
+### 2. Apply ResourceQuota manifests
+
+The quota YAML files do not set `metadata.namespace`; target the namespace with `-n`:
+
+```bash
+kubectl apply -f resourcesQuotas/dev.yml -n dev
+kubectl apply -f resourcesQuotas/staging.yml -n staging
+kubectl apply -f resourcesQuotas/prod.yml -n prod
+```
+
+### 3. Verify
+
+```bash
+kubectl get resourcequota -n dev
+kubectl get resourcequota -n staging
+kubectl get resourcequota -n prod
+```
+
 ## Application deployment
 
 Add manifests, Helm charts, or CI/CD steps here as you extend the project (for example `kubectl apply -f ...`).

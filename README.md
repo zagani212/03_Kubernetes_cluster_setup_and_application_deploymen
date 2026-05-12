@@ -8,6 +8,7 @@ This project documents how to provision an Amazon EKS cluster and deploy applica
 - [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) installed and configured (`aws configure`)
 - [eksctl](https://eksctl.io/installation/)
 - [kubectl](https://kubernetes.io/docs/tasks/tools/)
+- [Helm](https://helm.sh/docs/intro/install/) (for Step 2, AWS Load Balancer Controller)
 
 Verify your AWS identity:
 
@@ -41,6 +42,84 @@ This provisions a managed cluster named `project3-cluster` with autoscaling betw
 kubectl get nodes
 kubectl cluster-info
 ```
+
+## Step 2: Install AWS Load Balancer Controller
+
+These steps follow the [AWS Load Balancer Controller](https://kubernetes-sigs.github.io/aws-load-balancer-controller/) install flow. Examples use cluster `project3-cluster` and region `eu-west-3`; change them if yours differ.
+
+### 1. Download the IAM policy document
+
+```bash
+curl -O https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.14.1/docs/install/iam_policy.json
+```
+
+### 2. Create the IAM policy
+
+```bash
+aws iam create-policy \
+  --policy-name AWSLoadBalancerControllerIAMPolicy \
+  --policy-document file://iam_policy.json
+```
+
+Copy the policy `Arn` from the command output. If the policy already exists, get its ARN:
+
+```bash
+aws iam list-policies --query "Policies[?PolicyName=='AWSLoadBalancerControllerIAMPolicy'].Arn" --output text
+```
+
+### 3. Enable the IAM OIDC provider on the cluster
+
+```bash
+eksctl utils associate-iam-oidc-provider \
+  --region=eu-west-3 \
+  --cluster=project3-cluster \
+  --approve
+```
+
+### 4. Create the IRSA (IAM Roles for Service Accounts)
+
+Use the policy ARN from step 2, or build it from your account ID:
+
+```bash
+export POLICY_ARN="arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):policy/AWSLoadBalancerControllerIAMPolicy"
+
+eksctl create iamserviceaccount \
+  --cluster=project3-cluster \
+  --namespace=kube-system \
+  --name=aws-load-balancer-controller \
+  --attach-policy-arn="${POLICY_ARN}" \
+  --override-existing-serviceaccounts \
+  --region eu-west-3 \
+  --approve
+```
+
+### 5. Add and update the Helm repo
+
+```bash
+helm repo add eks https://aws.github.io/eks-charts
+helm repo update eks
+```
+
+### 6. Install the controller with Helm
+
+Use the same cluster name as in EKS (`project3-cluster`, not a placeholder).
+
+```bash
+helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+  -n kube-system \
+  --set clusterName=project3-cluster \
+  --set serviceAccount.create=false \
+  --set serviceAccount.name=aws-load-balancer-controller \
+  --version 1.14.0
+```
+
+### 7. Verify the installation
+
+```bash
+kubectl get deployment -n kube-system
+```
+
+You should see `aws-load-balancer-controller` among the deployments in `kube-system`.
 
 ## Application deployment
 

@@ -121,6 +121,49 @@ kubectl get deployment -n kube-system
 
 You should see `aws-load-balancer-controller` among the deployments in `kube-system`.
 
+## Step 3: Configure and install the EBS CSI driver
+
+The [Amazon EBS CSI driver](https://docs.aws.amazon.com/eks/latest/userguide/ebs-csi.html) lets Kubernetes provision EBS volumes for `PersistentVolumeClaim` resources. Ensure the OIDC provider is associated (Step 2.3) before creating the IAM service account.
+
+### 1. Create the IAM role for the EBS CSI controller (IRSA, role only)
+
+```bash
+eksctl create iamserviceaccount \
+  --name ebs-csi-controller-sa \
+  --namespace kube-system \
+  --cluster project3-cluster \
+  --region eu-west-3 \
+  --role-name AmazonEKS_EBS_CSI_DriverRole \
+  --role-only \
+  --attach-policy-arn arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy \
+  --approve
+```
+
+### 2. Install the `aws-ebs-csi-driver` EKS add-on
+
+Point the add-on at the role created above (account ID is resolved automatically):
+
+```bash
+export EBS_CSI_ROLE_ARN="arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):role/AmazonEKS_EBS_CSI_DriverRole"
+
+eksctl create addon \
+  --name aws-ebs-csi-driver \
+  --cluster project3-cluster \
+  --region eu-west-3 \
+  --service-account-role-arn "${EBS_CSI_ROLE_ARN}" \
+  --force
+```
+
+`--force` replaces an existing add-on configuration if the add-on is already present.
+
+### 3. Verify the driver pods
+
+```bash
+kubectl get pods -n kube-system -l "app.kubernetes.io/name=aws-ebs-csi-driver"
+```
+
+You should see controller and node plugin pods in `Running` state.
+
 ## Application deployment
 
 Add manifests, Helm charts, or CI/CD steps here as you extend the project (for example `kubectl apply -f ...`).

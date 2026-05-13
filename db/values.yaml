@@ -1,0 +1,36 @@
+app: 
+  label: db
+  title: Project 3 db
+  description: This is a database for the project 3
+
+replicaCount: 1
+
+container:
+  name: db
+  image: postgres:16-alpine
+  port: 5432
+  portName: postgres
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1
+      memory: 512Mi
+
+secret:
+  name: db-credentials
+  user: app
+  password: password
+  db: appdb
+
+
+
+volume:
+  name: ebs-sc-1
+  size: 5Gi
+  type: gp2
+
+service:
+  type: ClusterIP
+  port: 5432

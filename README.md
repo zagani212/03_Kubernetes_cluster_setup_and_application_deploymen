@@ -8,7 +8,7 @@ This project documents how to provision an Amazon EKS cluster and deploy applica
 - [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) installed and configured (`aws configure`)
 - [eksctl](https://eksctl.io/installation/)
 - [kubectl](https://kubernetes.io/docs/tasks/tools/)
-- [Helm](https://helm.sh/docs/intro/install/) (for Step 2, AWS Load Balancer Controller)
+- [Helm](https://helm.sh/docs/intro/install/) (for the AWS Load Balancer Controller in Step 2 and for the application charts in the [Helm application deployment](#helm-application-deployment) section)
 
 Verify your AWS identity:
 
@@ -198,9 +198,113 @@ kubectl get resourcequota -n staging
 kubectl get resourcequota -n prod
 ```
 
-## Application deployment
+## Helm application deployment
 
-Add manifests, Helm charts, or CI/CD steps here as you extend the project (for example `kubectl apply -f ...`).
+This repository ships three local Helm charts under [`db/`](db/), [`back/`](back/), and [`frontend/`](frontend/). They are intended for the same namespace as your environment (the examples below use **`dev`**; use `staging` or `prod` if you created those namespaces and quotas in Step 4).
+
+### Install or upgrade the Helm CLI
+
+If Helm is not already installed, follow the [official installation guide](https://helm.sh/docs/intro/install/). Confirm it works:
+
+```bash
+helm version
+```
+
+### What each chart does
+
+| Chart path | Release name (example) | Main resources |
+|------------|-------------------------|----------------|
+| [`db/`](db/) | `project3-db` | `StorageClass` (name from [`db/values.yaml`](db/values.yaml) `volume.name`, default `ebs-sc-1`), `Secret` `db-credentials`, `StatefulSet` and `Service` **`db`** (Postgres 16) |
+| [`back/`](back/) | `project3-backend` | `ConfigMap` `backend-app` (Node app + `package.json`), `Deployment` and `Service` **`backend`** (public `node:20-alpine` image; init container runs `npm install`) |
+| [`frontend/`](frontend/) | `project3-frontend` | `ConfigMap` for HTML, `Deployment` and `Service` **`nginx`** (see [`frontend/Chart.yaml`](frontend/Chart.yaml)), public `nginx` image, `LoadBalancer` with AWS NLB annotations from [`frontend/values.yaml`](frontend/values.yaml) |
+
+The backend chart expects Postgres at host **`db`** on port **5432** and secret **`db-credentials`** with `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB` (matching the `db` chart). Override `container.pgHost` or `secret.name` in [`back/values.yaml`](back/values.yaml) if you change those in the database chart.
+
+### Prerequisites on the cluster
+
+1. **EBS CSI driver** (Step 3): the `db` chart provisions a PVC using the `StorageClass` rendered from [`db/templates/storage-class.yml`](db/templates/storage-class.yml) (`ebs.csi.aws.com`, volume type from `volume.type` in values, default gp2). Without the driver, the Postgres pod stays pending.
+2. **AWS Load Balancer Controller** (Step 2): recommended for the frontend `Service` type `LoadBalancer` so Kubernetes can provision an AWS load balancer (NLB per your annotations).
+3. **Namespace**: create `dev` (or your target namespace) before installing, for example as in Step 4.
+
+### Install the charts (from the repository root)
+
+Use `helm upgrade --install` so the same commands work for first install and later upgrades. Pick release names you prefer; the examples use `project3-db`, `project3-backend`, and `project3-frontend`.
+
+**1. Database (install first)**
+
+```bash
+helm upgrade --install project3-db ./db -n dev
+```
+
+Wait until Postgres is ready:
+
+```bash
+kubectl rollout status statefulset/db -n dev
+kubectl get pods,svc,pvc -n dev -l app=db
+```
+
+**2. Backend API**
+
+```bash
+helm upgrade --install project3-backend ./back -n dev
+```
+
+```bash
+kubectl rollout status deployment/backend -n dev
+```
+
+**3. Frontend (nginx + LoadBalancer)**
+
+The frontend chart reads [`frontend/values.yaml`](frontend/values.yaml) (including `namespace: dev`). Install into the same namespace:
+
+```bash
+helm upgrade --install project3-frontend ./frontend -n dev
+```
+
+Check the load balancer hostname or IP:
+
+```bash
+kubectl get svc nginx -n dev
+```
+
+### Override values at install time
+
+You can pass overrides without editing files, for example a stronger database password or a different namespace for the frontend chart’s namespaced resources:
+
+```bash
+helm upgrade --install project3-db ./db -n dev \
+  --set secret.password='your-secure-password'
+
+helm upgrade --install project3-frontend ./frontend -n staging \
+  --set namespace=staging
+```
+
+For larger changes, copy a values file and pass `-f my-values.yaml`.
+
+### Lint and dry-run
+
+```bash
+helm lint ./db ./back ./frontend
+helm upgrade --install project3-db ./db -n dev --dry-run=client
+```
+
+### Upgrade and uninstall
+
+After changing chart templates or values:
+
+```bash
+helm upgrade project3-db ./db -n dev
+helm upgrade project3-backend ./back -n dev
+helm upgrade project3-frontend ./frontend -n dev
+```
+
+Remove a release (namespaced resources for that release are removed; the `StorageClass` created by the `db` chart is cluster-scoped and may remain until you delete it separately if needed):
+
+```bash
+helm uninstall project3-frontend -n dev
+helm uninstall project3-backend -n dev
+helm uninstall project3-db -n dev
+```
 
 ## Cleanup (optional)
 

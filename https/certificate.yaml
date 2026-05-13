@@ -1,0 +1,13 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: my-site-cert
+  namespace: dev # Must be the same namespace as your backend/frontend
+spec:
+  secretName: my-site-tls-secret # Cert-manager will save the certificate here
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  commonName: abdelhak-assahi.online # Your real domain
+  dnsNames:
+  - abdelhak-assahi.online

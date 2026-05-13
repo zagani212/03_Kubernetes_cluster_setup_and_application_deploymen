@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Chart.Name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ .Values.app.label }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Values.app.label }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.app.label }}
+    spec:
+      containers:
+        - name: {{ .Values.container.name }}
+          image: {{ .Values.container.image }}
+          ports:
+            - containerPort: {{ .Values.container.port }}
+              name: {{ .Values.container.portName }}
+          volumeMounts:
+            - name: {{ .Values.volume.name }}
+              mountPath: {{ .Values.volume.mountPath }}
+              subPath: {{ .Values.volume.subPath }}
+          resources:
+            requests:
+              cpu: {{ .Values.container.resources.requests.cpu }}
+              memory: {{ .Values.container.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.container.resources.limits.cpu }}
+              memory: {{ .Values.container.resources.limits.memory }}
+      volumes:
+        - name: {{ .Values.volume.name }}
+          configMap:
+            name: {{ .Values.volume.configMap.name }}

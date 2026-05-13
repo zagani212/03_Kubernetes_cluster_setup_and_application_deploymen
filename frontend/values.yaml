@@ -1,0 +1,36 @@
+namespace: dev
+
+app:
+  label: nginx
+  title: Project 3 nginx - Abdelhak
+  description: This HTML is mounted from a Kubernetes ConfigMap, not the default nginx welcome page.
+
+container:
+  name: nginx
+  image: nginx:1.27-alpine
+  port: 80
+  portName: http
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+volume:
+  name: html
+  mountPath: /usr/share/nginx/html/index.html
+  subPath: index.html
+  configMap:
+    name: frontend-nginx-html
+
+replicaCount: 2
+
+service:
+  type: LoadBalancer
+
+annotations:
+  service.beta.kubernetes.io/aws-load-balancer-type: "external"
+  service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
+  service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"

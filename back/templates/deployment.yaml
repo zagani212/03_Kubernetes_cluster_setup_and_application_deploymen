@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.app.label }}
+  labels:
+    app: {{ .Values.app.label }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Values.app.label }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.app.label }}
+    spec:
+      initContainers:
+        - name: npm-install
+          image: {{ .Values.initContainer.image }}
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              cp /config/package.json /deps/package.json
+              cd /deps && npm install --omit=dev
+          resources:
+            requests:
+              cpu: {{ .Values.initContainer.resources.requests.cpu }}
+              memory: {{ .Values.initContainer.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.initContainer.resources.limits.cpu }}
+              memory: {{ .Values.initContainer.resources.limits.memory }}
+          volumeMounts:
+            - name: app-config
+              mountPath: /config
+            - name: node-deps
+              mountPath: /deps
+      containers:
+        - name: {{ .Values.container.name }}
+          image: {{ .Values.container.image }}
+          command:
+            - sh
+            - -c
+            - |
+              export NODE_PATH=/deps/node_modules
+              exec node /config/server.cjs
+          ports:
+            - name: http
+              containerPort: {{ .Values.container.port }}
+          env:
+            - name: NODE_ENV
+              value: {{ .Values.container.nodeEnv }}
+            - name: PORT
+              value: "{{ .Values.container.port }}"
+            - name: PGHOST
+              value: {{ .Values.container.pgHost }}
+            - name: PGPORT
+              value: "{{ .Values.container.pgPort }}"
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secret.name }}
+          volumeMounts:
+            - name: app-config
+              mountPath: /config
+            - name: node-deps
+              mountPath: /deps
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: {{ .Values.container.resources.requests.cpu }}
+              memory: {{ .Values.container.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.container.resources.limits.cpu }}
+              memory: {{ .Values.container.resources.limits.memory }}
+      volumes:
+        - name: app-config
+          configMap:
+            name: backend-app
+        - name: node-deps
+          emptyDir: {}

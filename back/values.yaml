@@ -1,0 +1,38 @@
+app:
+  label: backend
+
+replicaCount: 1
+
+initContainer:
+  image: node:20-alpine
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1
+      memory: 512Mi
+
+container:
+  name: backend
+  image: node:20-alpine
+  port: 8080
+  portName: http
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1
+      memory: 512Mi
+  nodeEnv: development
+  pgHost: db
+  pgPort: 5432
+
+secret:
+  name: db-credentials
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080

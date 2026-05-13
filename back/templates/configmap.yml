@@ -1,0 +1,123 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-app
+  labels:
+    app: {{ .Values.app.label }}
+data:
+  package.json: |
+    {
+      "name": "project3-backend",
+      "private": true,
+      "dependencies": {
+        "express": "4.21.2",
+        "pg": "8.13.1"
+      }
+    }
+  server.cjs: |
+    const express = require("express");
+    const { Pool } = require("pg");
+
+    const port = Number(process.env.PORT || 8080);
+
+    const pool = new Pool({
+      host: process.env.PGHOST || "localhost",
+      port: Number(process.env.PGPORT || 5432),
+      user: process.env.POSTGRES_USER,
+      password: process.env.POSTGRES_PASSWORD,
+      database: process.env.POSTGRES_DB,
+      max: 10,
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 10_000,
+    });
+
+    async function ensureSchema() {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS greetings (
+          id SERIAL PRIMARY KEY,
+          message TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      const { rows } = await pool.query("SELECT COUNT(*)::int AS c FROM greetings");
+      if (rows[0].c === 0) {
+        await pool.query("INSERT INTO greetings (message) VALUES ($1)", [
+          "Hello from PostgreSQL",
+        ]);
+      }
+    }
+
+    const app = express();
+    app.use(express.json());
+
+    app.get("/api/health", async (_req, res) => {
+      try {
+        await pool.query("SELECT 1");
+        res.json({ ok: true, database: "connected" });
+      } catch (e) {
+        res.status(503).json({
+          ok: false,
+          database: "error",
+          detail:
+            process.env.NODE_ENV === "production" ? undefined : String(e.message),
+        });
+      }
+    });
+
+    app.get("/api/greetings", async (_req, res) => {
+      try {
+        const { rows } = await pool.query(
+          "SELECT id, message, created_at FROM greetings ORDER BY id ASC"
+        );
+        res.json({ items: rows });
+      } catch (e) {
+        res.status(500).json({
+          error: "query_failed",
+          detail:
+            process.env.NODE_ENV === "production" ? undefined : String(e.message),
+        });
+      }
+    });
+
+    app.post("/api/greetings", async (req, res) => {
+      const message =
+        typeof req.body?.message === "string" ? req.body.message.trim() : "";
+      if (!message) {
+        return res.status(400).json({ error: "message_required" });
+      }
+      try {
+        const { rows } = await pool.query(
+          "INSERT INTO greetings (message) VALUES ($1) RETURNING id, message, created_at",
+          [message]
+        );
+        res.status(201).json(rows[0]);
+      } catch (e) {
+        res.status(500).json({
+          error: "insert_failed",
+          detail:
+            process.env.NODE_ENV === "production" ? undefined : String(e.message),
+        });
+      }
+    });
+
+    let server;
+    async function main() {
+      await ensureSchema();
+      server = app.listen(port, () => {
+        console.log(`listening on ${port}`);
+      });
+    }
+
+    main().catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
+
+    async function shutdown() {
+      if (server) server.close();
+      await pool.end().catch(() => {});
+      process.exit(0);
+    }
+
+    process.on("SIGTERM", shutdown);
+    process.on("SIGINT", shutdown);

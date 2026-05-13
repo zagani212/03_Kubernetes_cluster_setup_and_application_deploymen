@@ -36,3 +36,8 @@ service:
   type: ClusterIP
   port: 8080
   targetPort: 8080
+
+hpa:
+  minReplicas: 1
+  maxReplicas: 10
+  averageUtilization: 50

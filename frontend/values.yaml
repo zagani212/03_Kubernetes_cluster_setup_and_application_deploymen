@@ -34,3 +34,8 @@ annotations:
   service.beta.kubernetes.io/aws-load-balancer-type: "external"
   service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "ip"
   service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+
+hpa:
+  minReplicas: 1
+  maxReplicas: 10
+  averageUtilization: 50

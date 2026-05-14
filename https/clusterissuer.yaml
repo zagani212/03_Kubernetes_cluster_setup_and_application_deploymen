@@ -4,13 +4,11 @@ metadata:
   name: letsencrypt-prod
 spec:
   acme:
+    email: you@example.com
     server: https://acme-v02.api.letsencrypt.org/directory
-    email: abdelhak.assahi@gmail.com
     privateKeySecretRef:
-      name: letsencrypt-prod-account-key
+      name: letsencrypt-prod
     solvers:
-    - http01:
-        service:
-          type: LoadBalancer
-          annotations:
-            service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+    - dns01:
+        route53:
+          region: eu-west-3

@@ -306,6 +306,103 @@ helm uninstall project3-backend -n dev
 helm uninstall project3-db -n dev
 ```
 
+## Observability: kube-prometheus-stack (Prometheus and Grafana)
+
+The [kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack) Helm chart bundles the **Prometheus Operator**, **Prometheus** (scrapes the Kubernetes API, cAdvisor/kubelet for node and container metrics, `ServiceMonitor`/`PodMonitor` CRs, and more), **Alertmanager**, **Grafana** with useful Kubernetes dashboards, **kube-state-metrics** (cluster-level object metrics), and **node-exporter** (host hardware and OS metrics on each node). Together they cover **cluster control plane and workload** observability plus **node** observability for standard EC2 worker nodes.
+
+### 1. Add the Helm repository
+
+```bash
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+```
+
+### 2. Install the stack
+
+Create a namespace (or let Helm create it) and install a release. The example release name is `kube-prometheus-stack` (it appears as a prefix on some resource names).
+
+```bash
+kubectl create namespace monitoring
+```
+
+Set an admin password for Grafana (avoid committing real passwords; generate one-off for demos):
+
+```bash
+export GRAFANA_ADMIN_PASSWORD="$(openssl rand -base64 18)"
+```
+
+Install with a modest retention period (adjust for your disk and needs):
+
+```bash
+helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+  -n monitoring \
+  --set grafana.adminPassword="${GRAFANA_ADMIN_PASSWORD}" \
+  --set prometheus.prometheusSpec.retention=15d
+```
+
+On small node groups (for example `t3.small` from this guide), Prometheus can be memory-hungry. If pods stay pending or are OOMKilled, cap requests or reduce retention, for example:
+
+```bash
+helm upgrade --install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+  -n monitoring \
+  --set grafana.adminPassword="${GRAFANA_ADMIN_PASSWORD}" \
+  --set prometheus.prometheusSpec.retention=7d \
+  --set prometheus.prometheusSpec.resources.requests.memory=1Gi \
+  --set prometheus.prometheusSpec.resources.limits.memory=2Gi
+```
+
+Wait until workloads are ready (all pods `Running` or `Completed`):
+
+```bash
+kubectl get pods -n monitoring
+```
+
+If a pod is slow to start, watch with `kubectl get pods -n monitoring -w` until it stabilizes.
+
+### 3. Access Grafana (dashboards)
+
+Default Grafana login is user **`admin`**. If you set `grafana.adminPassword` as above, use that value. If you omitted it, Helm generates a random password stored in a Secret:
+
+```bash
+kubectl get secret -n monitoring kube-prometheus-stack-grafana \
+  -o jsonpath="{.data.admin-password}" | base64 --decode
+echo
+```
+
+Port-forward the Grafana service (chart default service name is usually `kube-prometheus-stack-grafana`):
+
+```bash
+kubectl port-forward -n monitoring svc/kube-prometheus-stack-grafana 3000:80
+```
+
+Open [http://127.0.0.1:3000](http://127.0.0.1:3000) in a browser. Pre-installed dashboards include **Kubernetes / Compute Resources / Node** and **Node Exporter / Nodes** for per-node metrics, plus cluster-wide Kubernetes views.
+
+For production, expose Grafana with an **Ingress** and TLS (for example cert-manager and your `https/` manifests), or a secured corporate VPN, instead of a long-lived `kubectl port-forward`.
+
+### 4. Access Prometheus (PromQL and targets)
+
+```bash
+kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090
+```
+
+Open [http://127.0.0.1:9090](http://127.0.0.1:9090). Under **Status → Targets**, confirm scrape targets are **UP** (API server, nodes, kube-state-metrics, node-exporter, etc.).
+
+### 5. Optional: scrape your own applications
+
+To have Prometheus scrape metrics from workloads in other namespaces, create **`ServiceMonitor`** or **`PodMonitor`** resources in those namespaces (same CRDs installed by this chart). Ensure your `Service` exposes a metrics port and that Prometheus is allowed to discover monitors in that namespace (the chart’s default `prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues` behavior may restrict discovery; consult the chart values for `serviceMonitorSelector` / `podMonitorSelector` if monitors are not picked up).
+
+### 6. Upgrade and uninstall
+
+```bash
+helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack -n monitoring
+```
+
+```bash
+helm uninstall kube-prometheus-stack -n monitoring
+```
+
+Uninstall removes Prometheus, Grafana, and related CRDs only if no other release depends on them; if CRDs remain and you need a full cleanup, follow the [chart documentation](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack#uninstall) for your environment.
+
 ## Cleanup (optional)
 
 To delete the cluster and related resources:

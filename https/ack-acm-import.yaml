@@ -1,0 +1,11 @@
+apiVersion: acm.services.k8s.aws/v1alpha1
+kind: Certificate
+metadata:
+  name: my-acm-imported-cert
+  namespace: default
+spec:
+  # Updated field for newer ACK versions
+  provisioning:
+    certificateSecretRef:
+      name: my-app-tls-secret
+      namespace: default
